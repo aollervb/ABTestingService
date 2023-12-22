@@ -1,9 +1,10 @@
 package com.aovsa.abtestingservice.controllers;
 
 import com.aovsa.abtestingservice.dtos.ExperimentDTO;
-import com.aovsa.abtestingservice.models.ExperimentModel;
-import com.aovsa.abtestingservice.repositories.VariationsRepository;
+import com.aovsa.abtestingservice.dtos.VariationDTO;
 import com.aovsa.abtestingservice.requests.CreateExperimentRequest;
+import com.aovsa.abtestingservice.requests.ModifyVariationWeight;
+import com.aovsa.abtestingservice.requests.VariationAssignmentRequest;
 import com.aovsa.abtestingservice.responses.CreateExperimentResponse;
 import com.aovsa.abtestingservice.services.ExperimentService;
 import org.springframework.http.ResponseEntity;
@@ -20,11 +21,9 @@ import java.util.List;
 @RequestMapping("/experiment")
 public class ExperimentController {
     private final ExperimentService experimentService;
-    private final VariationsRepository variationsRepository;
 
-    public ExperimentController(ExperimentService experimentService, VariationsRepository variationsRepository) {
+    public ExperimentController(ExperimentService experimentService) {
         this.experimentService = experimentService;
-        this.variationsRepository = variationsRepository;
     }
 
     @PostMapping("/")
@@ -40,5 +39,15 @@ public class ExperimentController {
     @GetMapping("/{id}")
     public ResponseEntity<ExperimentDTO> getExperimentById(@PathVariable String id) {
         return experimentService.getExperimentById(id);
+    }
+
+    @GetMapping("/assignment")
+    public String getExperimentByAssignmentId(@RequestBody VariationAssignmentRequest request) {
+        return experimentService.getVariationAssignment(request);
+    }
+
+    @PostMapping("/assignment")
+    public ResponseEntity<List<VariationDTO>> modifyVariationWeights(@RequestBody ModifyVariationWeight request) {
+        return experimentService.updateVariationWeightsForExperiment(request);
     }
 }

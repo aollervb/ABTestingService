@@ -18,16 +18,12 @@ import java.util.List;
 public class ExperimentModel {
 
     private String id;
-
     private String experimentName;
-
     private List<String> variations;
-
     private String author;
 
     @DynamoDbPartitionKey
     @DynamoDbAttribute("id")
-
     public String getId() {
         return id;
     }

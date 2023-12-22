@@ -7,6 +7,8 @@ import com.aovsa.abtestingservice.models.ExperimentVariationModel;
 import com.aovsa.abtestingservice.repositories.ExperimentRepository;
 import com.aovsa.abtestingservice.repositories.VariationsRepository;
 import com.aovsa.abtestingservice.requests.CreateExperimentRequest;
+import com.aovsa.abtestingservice.requests.ModifyVariationWeight;
+import com.aovsa.abtestingservice.requests.VariationAssignmentRequest;
 import com.aovsa.abtestingservice.responses.CreateExperimentResponse;
 
 import org.modelmapper.ModelMapper;
@@ -15,12 +17,13 @@ import org.springframework.stereotype.Service;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
 
 import lombok.extern.log4j.Log4j2;
 
@@ -32,12 +35,17 @@ public class ExperimentService {
     public static final String VARIATIONS_PREFIX = "V";
     public static final double STARTING_WEIGHT = 0;
     public static final String V_0 = "V0";
+    private static final char[] HEX_ARRAY = "0123456789ABCDEF".toCharArray();
     private final ExperimentRepository experimentRepository;
     private final VariationsRepository variationsRepository;
     private final ModelMapper modelMapper;
-
+    //TODO: Add logging
+    //TODO: Document methods
+    //TODO: Add unit tests
+    //TODO: Add authentication with API key
     public ExperimentService(ExperimentRepository experimentRepository,
-                             VariationsRepository variationsRepository, ModelMapper modelMapper) {
+                             VariationsRepository variationsRepository,
+                             ModelMapper modelMapper) {
         this.experimentRepository = experimentRepository;
         this.variationsRepository = variationsRepository;
         this.modelMapper = modelMapper;
@@ -51,9 +59,7 @@ public class ExperimentService {
     public ResponseEntity<ExperimentDTO> getExperimentById(String id) {
         long startOfRequest = currentTimeMillis();
         ExperimentModel model = experimentRepository.findById(id);
-
         if (model != null) {
-
             List<ExperimentVariationModel> variationModelList = new ArrayList<>();
             for (String variation : model.getVariations()) {
                 ExperimentVariationModel variationModel = variationsRepository.findById(variation);
@@ -82,7 +88,6 @@ public class ExperimentService {
         List<ExperimentModel> experiments = (List<ExperimentModel>) experimentRepository.findAll();
         List<ExperimentDTO> experimentDTOS = new ArrayList<>();
         for (ExperimentModel experiment : experiments) {
-
             List<ExperimentVariationModel> variations = new ArrayList<>();
             for (String variationId : experiment.getVariations()) {
                 variations.add(variationsRepository.findById(variationId));
@@ -92,7 +97,7 @@ public class ExperimentService {
         }
 
         long latency = currentTimeMillis() - startOfRequest;
-        log.info("ExperimentService:ExperimentRetrieval:Latency:{}ms", latency);
+        log.info("experimentService:getAllExperiments:latency:{}ms", latency);
         return new ResponseEntity<>(experimentDTOS, HttpStatus.OK);
     }
 
@@ -108,7 +113,8 @@ public class ExperimentService {
         // If the request is invalid, return a response with the error message
         if ((boolean) validation.get("hasError")) {
             long latency = currentTimeMillis() - startOfRequest;
-            log.info("ExperimentService:ExperimentCreation:Latency:{}ms", latency);
+            log.error("experimentService:experimentCreation:error:{}", validation.get("errorMessage"));
+            log.info("experimentService:experimentCreation:latency:{}ms", latency);
             return new ResponseEntity<>(
                     new CreateExperimentResponse(
                             (boolean)validation.get("hasError"),
@@ -133,6 +139,8 @@ public class ExperimentService {
             //Create the variations for the experiment
             createVariationsForExperiment(experiment.getId(), request.getVariations());
             long latency =  currentTimeMillis() - startOfRequest;
+            log.info("experimentService:experimentCreation:success");
+            log.info("experimentService:experimentCreation:latency:{}ms", latency);
             return new ResponseEntity<>(
                     new CreateExperimentResponse(
                             (boolean)validation.get("hasError"),
@@ -144,6 +152,100 @@ public class ExperimentService {
 
         } catch (UnsupportedOperationException e) {
             throw new UnsupportedOperationException("Unable to create experiment");
+        }
+    }
+    /**
+     * Updates the weights of the variations for a given experiment
+     * @param request
+     * @return ResponseEntity<List<VariationDTO>>
+     */
+    public ResponseEntity<List<VariationDTO>> updateVariationWeightsForExperiment(ModifyVariationWeight request) {
+        if (!validateModifyVariations(request)) {
+            return new ResponseEntity<>(null, HttpStatus.BAD_REQUEST);
+        }
+
+        ExperimentModel experimentModel = experimentRepository.findById(request.getExperimentId());
+        if (experimentModel == null) {
+            return new ResponseEntity<>(null, HttpStatus.NOT_FOUND);
+        }
+        List<VariationDTO> variationDTOList = new ArrayList<>();
+        for(String var : experimentModel.getVariations()) {
+            ExperimentVariationModel varModel = variationsRepository.findById(var);
+            HashMap<String, Double> variationWeights = request.getVariationWeights();
+            if (variationWeights.get(varModel.getVariationName()) != null) {
+                varModel.setVariationWeight(variationWeights.get(varModel.getVariationName()));
+                variationsRepository.update(varModel);
+                variationDTOList.add(modelMapper.map(varModel, VariationDTO.class));
+            }
+        }
+
+        return new ResponseEntity<>(variationDTOList, HttpStatus.OK);
+    }
+
+    /**
+     * Gets the variation assignment for a given experiment
+     * @param request
+     * @return String
+     */
+    public String getVariationAssignment(VariationAssignmentRequest request) {
+        long startOfRequest = currentTimeMillis();
+        // Get experiment
+        ExperimentModel expModel = experimentRepository.findById(request.getExperimentId());
+
+        // If experiment doesn't exist, return V0
+        if(expModel == null) {
+            return V_0;
+        }
+
+        for (String varId : expModel.getVariations()) {
+            ExperimentVariationModel varModel = variationsRepository.findById(varId);
+            if (varModel.getVariationWeight() == 100 && varModel.getVariationName().equals(V_0)) {
+                // If it V0 weight = 100%, return V0
+                return varModel.getVariationName();
+            }
+        }
+
+        return bucketing(expModel, request.getCustomerId(), request.getSessionId());
+    }
+
+    private String bucketing(ExperimentModel experimentModel, String customerId, String sessionId) {
+
+        int numberOfVariations = experimentModel.getVariations().size();
+        if (customerId != null && sessionId != null) {
+            return V_0;
+        }
+
+        String stringToHash = experimentModel.getExperimentName();
+        if (customerId != null && !customerId.isEmpty()) {
+            stringToHash += customerId;
+        } else if (sessionId != null && !sessionId.isEmpty()) {
+            stringToHash += sessionId;
+        }
+
+        double hashValue =  (double) Integer.parseInt(hash(stringToHash).substring(0,5), 16) / 1000000;
+        String variationId = experimentModel.getVariations().get(numberOfVariations - 1);
+        ExperimentVariationModel varModel = variationsRepository.findById(variationId);
+        if (hashValue <= varModel.getVariationWeight()/100) {
+            return varModel.getVariationName();
+        }
+
+        return V_0;
+    }
+
+    private String hash(String stringToHash) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("MD5");
+            md.update(stringToHash.getBytes(StandardCharsets.UTF_8));
+            byte[] digest = md.digest();
+            char[] hexChars = new char[digest.length * 2];
+            for (int j = 0; j < digest.length; j++) {
+                int v = digest[j] & 0xFF;
+                hexChars[j * 2] = HEX_ARRAY[v >>> 4];
+                hexChars[j * 2 + 1] = HEX_ARRAY[v & 0x0F];
+            }
+            return new String(hexChars);
+        } catch (Exception e) {
+            throw new UnsupportedOperationException("Unable to hash string");
         }
     }
 
@@ -204,38 +306,27 @@ public class ExperimentService {
         return response;
     }
 
-    public String getVariationAssignment(String cid, String expId) {
-
-        // Get experiment weight
-        // If experiment doesn't exist, return V0
-        ExperimentModel expModel = experimentRepository.findById(expId);
-
-        if(expModel == null) {
-            return V_0;
+    private boolean validateModifyVariations(ModifyVariationWeight request) {
+        if (request == null) {
+            return false;
         }
 
-        for (String varId : expModel.getVariations()) {
-            ExperimentVariationModel varModel = variationsRepository.findById(varId);
-            if (varModel.getVariationWeight() == 100) {
-                return varModel.getVariationName();
+        if (request.getExperimentId().isEmpty()) {
+            return false;
+        }
+
+        if (request.getVariationWeights().isEmpty()) {
+            return false;
+        }
+        double totalWeightOfExperiment = 0;
+        for (Double weight : request.getVariationWeights().values()) {
+            totalWeightOfExperiment += weight;
+            if (totalWeightOfExperiment > 100) {
+                return false;
             }
         }
-        // Check if V0 is < 100%
-        // If it is = 100%, return V0
 
-        //TODO: Create table and repo for Experiment assignments
-
-        // Is CID available?
-        // If CID is available, look for treatment with CID and return
-        // Else, Is SessionId available?
-        // If it is available, look for treatment with SID and return
-
-        //TODO: Create hashing function for assigning treatments
-
-        // If the workflow is upto this point, this means that this SID or CID still don't have a variation assigned,
-        // so here, calculate assignment for the SID or CID, store in DB and return the result.
-
-        return null;
+        return true;
     }
 
     private ExperimentDTO mapToDTO(ExperimentModel experimentModel, List<ExperimentVariationModel> variationModel) {
@@ -248,8 +339,6 @@ public class ExperimentService {
         experimentDTO.setExperimentName(experimentModel.getExperimentName());
         experimentDTO.setVariations(variationDTOList);
         experimentDTO.setAuthor(experimentModel.getAuthor());
-
         return experimentDTO;
     }
-
 }
