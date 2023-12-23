@@ -3,9 +3,10 @@ package com.aovsa.abtestingservice.controllers;
 import com.aovsa.abtestingservice.dtos.ExperimentDTO;
 import com.aovsa.abtestingservice.dtos.VariationDTO;
 import com.aovsa.abtestingservice.requests.CreateExperimentRequest;
-import com.aovsa.abtestingservice.requests.ModifyVariationWeight;
+import com.aovsa.abtestingservice.requests.ModifyVariationWeightRequest;
 import com.aovsa.abtestingservice.requests.VariationAssignmentRequest;
 import com.aovsa.abtestingservice.responses.CreateExperimentResponse;
+import com.aovsa.abtestingservice.responses.ModifyVariationWeightResponse;
 import com.aovsa.abtestingservice.services.ExperimentService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -47,7 +48,7 @@ public class ExperimentController {
     }
 
     @PostMapping("/assignment")
-    public ResponseEntity<List<VariationDTO>> modifyVariationWeights(@RequestBody ModifyVariationWeight request) {
+    public ResponseEntity<ModifyVariationWeightResponse> modifyVariationWeights(@RequestBody ModifyVariationWeightRequest request) {
         return experimentService.updateVariationWeightsForExperiment(request);
     }
 }

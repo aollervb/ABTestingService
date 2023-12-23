@@ -1,5 +1,6 @@
 package com.aovsa.abtestingservice.services;
 
+import com.amazonaws.services.dynamodbv2.xspec.M;
 import com.aovsa.abtestingservice.dtos.ExperimentDTO;
 import com.aovsa.abtestingservice.dtos.VariationDTO;
 import com.aovsa.abtestingservice.models.ExperimentModel;
@@ -7,10 +8,11 @@ import com.aovsa.abtestingservice.models.ExperimentVariationModel;
 import com.aovsa.abtestingservice.repositories.ExperimentRepository;
 import com.aovsa.abtestingservice.repositories.VariationsRepository;
 import com.aovsa.abtestingservice.requests.CreateExperimentRequest;
-import com.aovsa.abtestingservice.requests.ModifyVariationWeight;
+import com.aovsa.abtestingservice.requests.ModifyVariationWeightRequest;
 import com.aovsa.abtestingservice.requests.VariationAssignmentRequest;
 import com.aovsa.abtestingservice.responses.CreateExperimentResponse;
 
+import com.aovsa.abtestingservice.responses.ModifyVariationWeightResponse;
 import org.modelmapper.ModelMapper;
 import org.springframework.stereotype.Service;
 
@@ -20,7 +22,6 @@ import org.springframework.http.ResponseEntity;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.UUID;
@@ -115,12 +116,16 @@ public class ExperimentService {
             long latency = currentTimeMillis() - startOfRequest;
             log.error("experimentService:experimentCreation:error:{}", validation.get("errorMessage"));
             log.info("experimentService:experimentCreation:latency:{}ms", latency);
+
+            CreateExperimentResponse response = CreateExperimentResponse.builder()
+                    .experimentDTO(null)
+                    .build();
+            response.setHasError((Boolean) validation.get("hasError"));
+            response.setError((String) validation.get("errorMessage"));
+            response.setRequestLatency(latency);
+
             return new ResponseEntity<>(
-                    new CreateExperimentResponse(
-                            (boolean)validation.get("hasError"),
-                            (String) validation.get("errorMessage"),
-                            latency
-                    ),
+                    response,
                     (HttpStatus) validation.get("httpStatus")
             );
         }
@@ -137,16 +142,21 @@ public class ExperimentService {
             experimentRepository.save(experiment);
 
             //Create the variations for the experiment
-            createVariationsForExperiment(experiment.getId(), request.getVariations());
+            List<ExperimentVariationModel> variationModelList =
+                    createVariationsForExperiment(experiment.getId(), request.getVariations());
             long latency =  currentTimeMillis() - startOfRequest;
             log.info("experimentService:experimentCreation:success");
             log.info("experimentService:experimentCreation:latency:{}ms", latency);
+
+            CreateExperimentResponse response = CreateExperimentResponse.builder()
+                    .experimentDTO(mapToDTO(experiment, variationModelList))
+                    .build();
+            response.setHasError((Boolean) validation.get("hasError"));
+            response.setError((String) validation.get("errorMessage"));
+            response.setRequestLatency(latency);
+
             return new ResponseEntity<>(
-                    new CreateExperimentResponse(
-                            (boolean)validation.get("hasError"),
-                            (String) validation.get("errorMessage"),
-                                  latency
-                    ),
+                    response,
                     (HttpStatus) validation.get("httpStatus")
             );
 
@@ -159,27 +169,57 @@ public class ExperimentService {
      * @param request
      * @return ResponseEntity<List<VariationDTO>>
      */
-    public ResponseEntity<List<VariationDTO>> updateVariationWeightsForExperiment(ModifyVariationWeight request) {
-        if (!validateModifyVariations(request)) {
-            return new ResponseEntity<>(null, HttpStatus.BAD_REQUEST);
+    public ResponseEntity<ModifyVariationWeightResponse> updateVariationWeightsForExperiment(ModifyVariationWeightRequest request) {
+        long startOfRequest = currentTimeMillis();
+
+        HashMap<String, Object> validation = validateModifyVariations(request);
+        if (!(boolean) validation.get("hasError")) {
+            ModifyVariationWeightResponse response = new ModifyVariationWeightResponse();
+            response.setExperimentDTO(null);
+            response.setHasError((boolean) validation.get("hasError"));
+            response.setError((String) validation.get("errorMessage"));
+            long latency = currentTimeMillis() - startOfRequest;
+            response.setRequestLatency(latency);
+            log.info("experimentService:variationModification:error:{}", validation.get("errorMessage"));
+            log.info("experimentService:experimentCreation:latency:{}ms", latency);
+            return new ResponseEntity<>(response, (HttpStatus) validation.get("httpStatus"));
         }
 
         ExperimentModel experimentModel = experimentRepository.findById(request.getExperimentId());
         if (experimentModel == null) {
-            return new ResponseEntity<>(null, HttpStatus.NOT_FOUND);
+            ModifyVariationWeightResponse response = new ModifyVariationWeightResponse();
+            response.setExperimentDTO(null);
+            response.setHasError((boolean) validation.get("hasError"));
+            response.setError((String) validation.get("errorMessage"));
+            long latency = currentTimeMillis() - startOfRequest;
+            response.setRequestLatency(latency);
+
+            log.info("experimentService:variationModification:error:{}", validation.get("errorMessage"));
+            log.info("experimentService:experimentCreation:latency:{}ms", latency);
+            return new ResponseEntity<>(response, (HttpStatus) validation.get("httpStatus"));
         }
-        List<VariationDTO> variationDTOList = new ArrayList<>();
+
+        List<ExperimentVariationModel> variationList = new ArrayList<>();
         for(String var : experimentModel.getVariations()) {
             ExperimentVariationModel varModel = variationsRepository.findById(var);
             HashMap<String, Double> variationWeights = request.getVariationWeights();
             if (variationWeights.get(varModel.getVariationName()) != null) {
                 varModel.setVariationWeight(variationWeights.get(varModel.getVariationName()));
                 variationsRepository.update(varModel);
-                variationDTOList.add(modelMapper.map(varModel, VariationDTO.class));
+                variationList.add(varModel);
             }
         }
 
-        return new ResponseEntity<>(variationDTOList, HttpStatus.OK);
+        long latency = currentTimeMillis() - startOfRequest;
+        ModifyVariationWeightResponse response = new ModifyVariationWeightResponse();
+        response.setExperimentDTO(mapToDTO(experimentModel, variationList));
+        response.setRequestLatency(latency);
+        response.setHasError((boolean) validation.get("hasError"));
+        response.setError(null);
+
+        log.info("experimentService:variationModification:success");
+        log.info("experimentService:experimentCreation:latency:{}ms", latency);
+        return new ResponseEntity<>(response, HttpStatus.OK);
     }
 
     /**
@@ -249,9 +289,9 @@ public class ExperimentService {
         }
     }
 
-    private void createVariationsForExperiment(String experimentId, int numberOfVariations) {
+    private List<ExperimentVariationModel> createVariationsForExperiment(String experimentId, int numberOfVariations) {
         List<String> variationIds = new ArrayList<>();
-
+        List<ExperimentVariationModel> variations = new ArrayList<>();
         for (int i = 0; i < numberOfVariations; i++) {
             ExperimentVariationModel variation = new ExperimentVariationModel();
             variation.setId(UUID.randomUUID().toString());
@@ -261,10 +301,12 @@ public class ExperimentService {
 
             variationsRepository.save(variation);
             variationIds.add(variation.getId());
+            variations.add(variation);
         }
         ExperimentModel experimentModel = experimentRepository.findById(experimentId);
         experimentModel.setVariations(variationIds);
         experimentRepository.update(experimentModel);
+        return variations;
     }
 
     private HashMap<String, Object> validateCreateExperiment(CreateExperimentRequest request) {
@@ -306,27 +348,51 @@ public class ExperimentService {
         return response;
     }
 
-    private boolean validateModifyVariations(ModifyVariationWeight request) {
+    private HashMap<String, Object> validateModifyVariations(ModifyVariationWeightRequest request) {
+        HashMap<String, Object> response = new HashMap<>();
         if (request == null) {
-            return false;
+            response.put("httpStatus", HttpStatus.BAD_REQUEST);
+            response.put("hasError", true);
+            response.put("errorMessage", "Request is Null");
+            return response;
+        }
+
+        ExperimentModel experimentModel = experimentRepository.findById(request.getExperimentId());
+        if (experimentModel == null) {
+            response.put("httpStatus", HttpStatus.NOT_FOUND);
+            response.put("hasError", true);
+            response.put("errorMessage", String.format("Experiment with experiment id: %s, was not found", request.getExperimentId()));
+            return response;
         }
 
         if (request.getExperimentId().isEmpty()) {
-            return false;
+            response.put("httpStatus", HttpStatus.BAD_REQUEST);
+            response.put("hasError", true);
+            response.put("errorMessage", "Request doesn't have an ExperimentId");
+            return response;
         }
 
         if (request.getVariationWeights().isEmpty()) {
-            return false;
+            response.put("httpStatus", HttpStatus.BAD_REQUEST);
+            response.put("hasError", true);
+            response.put("errorMessage", "Request doesn't have variation weights");
+            return response;
         }
         double totalWeightOfExperiment = 0;
         for (Double weight : request.getVariationWeights().values()) {
             totalWeightOfExperiment += weight;
             if (totalWeightOfExperiment > 100) {
-                return false;
+                response.put("httpStatus", HttpStatus.BAD_REQUEST);
+                response.put("hasError", true);
+                response.put("errorMessage", "The sum of the weights is bigger than 100.");
+                return response;
             }
         }
 
-        return true;
+        response.put("httpStatus", HttpStatus.OK);
+        response.put("hasError", false);
+        response.put("errorMessage", null);
+        return response;
     }
 
     private ExperimentDTO mapToDTO(ExperimentModel experimentModel, List<ExperimentVariationModel> variationModel) {
