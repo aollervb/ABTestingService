@@ -5,7 +5,7 @@ import lombok.Data;
 import java.util.HashMap;
 
 @Data
-public class ModifyVariationWeight {
+public class ModifyVariationWeightRequest {
     private String experimentId;
     private HashMap<String, Double> variationWeights;
 
