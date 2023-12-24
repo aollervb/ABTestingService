@@ -1,6 +1,5 @@
 package com.aovsa.abtestingservice.services;
 
-import com.amazonaws.services.dynamodbv2.xspec.M;
 import com.aovsa.abtestingservice.dtos.ExperimentDTO;
 import com.aovsa.abtestingservice.dtos.VariationDTO;
 import com.aovsa.abtestingservice.models.ExperimentModel;
@@ -12,6 +11,7 @@ import com.aovsa.abtestingservice.requests.ModifyVariationWeightRequest;
 import com.aovsa.abtestingservice.requests.VariationAssignmentRequest;
 import com.aovsa.abtestingservice.responses.CreateExperimentResponse;
 
+import com.aovsa.abtestingservice.responses.VariationAssignmentResponse;
 import com.aovsa.abtestingservice.responses.ModifyVariationWeightResponse;
 import org.modelmapper.ModelMapper;
 import org.springframework.stereotype.Service;
@@ -173,7 +173,7 @@ public class ExperimentService {
         long startOfRequest = currentTimeMillis();
 
         HashMap<String, Object> validation = validateModifyVariations(request);
-        if (!(boolean) validation.get("hasError")) {
+        if ((boolean) validation.get("hasError")) {
             ModifyVariationWeightResponse response = new ModifyVariationWeightResponse();
             response.setExperimentDTO(null);
             response.setHasError((boolean) validation.get("hasError"));
@@ -224,30 +224,55 @@ public class ExperimentService {
 
     /**
      * Gets the variation assignment for a given experiment
+     *
      * @param request
      * @return String
      */
-    public String getVariationAssignment(VariationAssignmentRequest request) {
+    public ResponseEntity<VariationAssignmentResponse> getVariationAssignment(VariationAssignmentRequest request) {
         long startOfRequest = currentTimeMillis();
         // Get experiment
         ExperimentModel expModel = experimentRepository.findById(request.getExperimentId());
 
         // If experiment doesn't exist, return V0
         if(expModel == null) {
-            return V_0;
+            VariationAssignmentResponse response = VariationAssignmentResponse.builder()
+                    .experimentId(request.getExperimentId())
+                    .variationAssignment(bucketing(expModel, request.getCustomerId(), request.getSessionId()))
+                    .build();
+            response.setHasError(true);
+            response.setError("Experiment with Id : " + request.getExperimentId() + " doesn't exist");
+            long latency = currentTimeMillis() - startOfRequest;
+            response.setRequestLatency(latency);
+
+            return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
         }
 
         for (String varId : expModel.getVariations()) {
             ExperimentVariationModel varModel = variationsRepository.findById(varId);
             if (varModel.getVariationWeight() == 100 && varModel.getVariationName().equals(V_0)) {
-                // If it V0 weight = 100%, return V0
-                return varModel.getVariationName();
+                VariationAssignmentResponse response = VariationAssignmentResponse.builder()
+                        .experimentId(expModel.getId())
+                        .variationAssignment(bucketing(expModel, request.getCustomerId(), request.getSessionId()))
+                        .build();
+                response.setHasError(false);
+                response.setError(null);
+                long latency = currentTimeMillis() - startOfRequest;
+                response.setRequestLatency(latency);
+                return new ResponseEntity<>(response, HttpStatus.OK);
             }
         }
 
-        return bucketing(expModel, request.getCustomerId(), request.getSessionId());
-    }
+        VariationAssignmentResponse response = VariationAssignmentResponse.builder()
+                .experimentId(expModel.getId())
+                .variationAssignment(bucketing(expModel, request.getCustomerId(), request.getSessionId()))
+                .build();
+        response.setHasError(false);
+        response.setError(null);
+        long latency = currentTimeMillis() - startOfRequest;
+        response.setRequestLatency(latency);
 
+        return new ResponseEntity<>(response, HttpStatus.OK);
+    }
     private String bucketing(ExperimentModel experimentModel, String customerId, String sessionId) {
 
         int numberOfVariations = experimentModel.getVariations().size();
