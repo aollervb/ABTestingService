@@ -29,6 +29,8 @@ dependencies {
     implementation group: 'org.modelmapper', name: 'modelmapper', version: '2.1.1'
     implementation group: 'io.awspring.cloud', name: 'spring-cloud-aws-dynamodb', version: '3.1.0'
 
+    //Spring Security
+    implementation "org.springframework.boot:spring-boot-starter-security"
     //Springboot WEB
     implementation 'org.springframework.boot:spring-boot-starter-data-rest'
     implementation 'org.springframework.boot:spring-boot-starter-web'

@@ -11,6 +11,7 @@ import com.aovsa.abtestingservice.requests.ModifyVariationWeightRequest;
 import com.aovsa.abtestingservice.requests.VariationAssignmentRequest;
 import com.aovsa.abtestingservice.responses.CreateExperimentResponse;
 
+import com.aovsa.abtestingservice.responses.GetExperimentResponse;
 import com.aovsa.abtestingservice.responses.VariationAssignmentResponse;
 import com.aovsa.abtestingservice.responses.ModifyVariationWeightResponse;
 import org.modelmapper.ModelMapper;
@@ -40,8 +41,7 @@ public class ExperimentService {
     private final ExperimentRepository experimentRepository;
     private final VariationsRepository variationsRepository;
     private final ModelMapper modelMapper;
-    //TODO: Add logging
-    //TODO: Document methods
+
     //TODO: Add unit tests
     //TODO: Add authentication with API key
     public ExperimentService(ExperimentRepository experimentRepository,
@@ -54,12 +54,13 @@ public class ExperimentService {
 
     /**
      * Gets an experiment by its ID
-     * @param id
+     * @param id Identificator for the Experiment.
      * @return ResponseEntity<ExperimentModel>
      */
-    public ResponseEntity<ExperimentDTO> getExperimentById(String id) {
+    public ResponseEntity<GetExperimentResponse> getExperimentById(String id) {
         long startOfRequest = currentTimeMillis();
         ExperimentModel model = experimentRepository.findById(id);
+        GetExperimentResponse response = new GetExperimentResponse();
         if (model != null) {
             List<ExperimentVariationModel> variationModelList = new ArrayList<>();
             for (String variation : model.getVariations()) {
@@ -70,21 +71,32 @@ public class ExperimentService {
             ExperimentDTO experimentDTO = mapToDTO(model,variationModelList);
             long latency = currentTimeMillis() - startOfRequest;
             log.info("ExperimentService:ExperimentRetrieval:Latency:{}ms", latency);
-            return new ResponseEntity<>(experimentDTO, HttpStatus.OK);
+
+            response.setExperiments(List.of(experimentDTO));
+            response.setHasError(false);
+            response.setError(null);
+            response.setRequestLatency(latency);
+
+            return new ResponseEntity<>(response, HttpStatus.OK);
         }
 
+        response.setExperiments(null);
+        response.setHasError(true);
+        response.setError(String.format("Experiment with Id: %s was not found", id));
         long latency = currentTimeMillis() - startOfRequest;
+        response.setRequestLatency(latency);
+
         log.error("Experiment with Id: {} was not found", id);
         log.info("ExperimentService:ExperimentRetrieval:Latency:{}ms", latency);
 
-        return new ResponseEntity<>(null, HttpStatus.NOT_FOUND);
+        return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
     }
 
     /**
      * Gets all experiments
      * @return ResponseEntity<List<ExperimentModel>>
      */
-    public ResponseEntity<List<ExperimentDTO>> getAllExperiments() {
+    public ResponseEntity<GetExperimentResponse> getAllExperiments() {
         long startOfRequest = currentTimeMillis();
         List<ExperimentModel> experiments = (List<ExperimentModel>) experimentRepository.findAll();
         List<ExperimentDTO> experimentDTOS = new ArrayList<>();
@@ -96,10 +108,15 @@ public class ExperimentService {
             ExperimentDTO experimentDTO = (mapToDTO(experiment, variations));
             experimentDTOS.add(experimentDTO);
         }
+        GetExperimentResponse response = new GetExperimentResponse();
+        response.setExperiments(experimentDTOS);
+        response.setHasError(false);
+        response.setError(null);
 
         long latency = currentTimeMillis() - startOfRequest;
+        response.setRequestLatency(latency);
         log.info("experimentService:getAllExperiments:latency:{}ms", latency);
-        return new ResponseEntity<>(experimentDTOS, HttpStatus.OK);
+        return new ResponseEntity<>(response, HttpStatus.OK);
     }
 
     /**
@@ -244,6 +261,9 @@ public class ExperimentService {
             long latency = currentTimeMillis() - startOfRequest;
             response.setRequestLatency(latency);
 
+            log.info("experimentService:getVariationAssingment:fail:{}", "Experiment with Id : " + request.getExperimentId() + " doesn't exist" );
+            log.info("experimentService:experimentCreation:latency:{}ms", latency);
+
             return new ResponseEntity<>(response, HttpStatus.NOT_FOUND);
         }
 
@@ -258,6 +278,8 @@ public class ExperimentService {
                 response.setError(null);
                 long latency = currentTimeMillis() - startOfRequest;
                 response.setRequestLatency(latency);
+                log.info("experimentService:getVariationAssignment:success");
+                log.info("experimentService:experimentCreation:latency:{}ms", latency);
                 return new ResponseEntity<>(response, HttpStatus.OK);
             }
         }
@@ -270,7 +292,8 @@ public class ExperimentService {
         response.setError(null);
         long latency = currentTimeMillis() - startOfRequest;
         response.setRequestLatency(latency);
-
+        log.info("experimentService:getVariationAssignment:success");
+        log.info("experimentService:experimentCreation:latency:{}ms", latency);
         return new ResponseEntity<>(response, HttpStatus.OK);
     }
     private String bucketing(ExperimentModel experimentModel, String customerId, String sessionId) {
@@ -327,6 +350,7 @@ public class ExperimentService {
             variationsRepository.save(variation);
             variationIds.add(variation.getId());
             variations.add(variation);
+            log.info("experimentService:createVariationForExperiment:success:{}:{}", experimentId, variation.getId());
         }
         ExperimentModel experimentModel = experimentRepository.findById(experimentId);
         experimentModel.setVariations(variationIds);
