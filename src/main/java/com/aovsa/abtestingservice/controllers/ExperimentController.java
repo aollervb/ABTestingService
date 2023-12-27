@@ -5,6 +5,7 @@ import com.aovsa.abtestingservice.requests.CreateExperimentRequest;
 import com.aovsa.abtestingservice.requests.ModifyVariationWeightRequest;
 import com.aovsa.abtestingservice.requests.VariationAssignmentRequest;
 import com.aovsa.abtestingservice.responses.CreateExperimentResponse;
+import com.aovsa.abtestingservice.responses.GetExperimentResponse;
 import com.aovsa.abtestingservice.responses.VariationAssignmentResponse;
 import com.aovsa.abtestingservice.responses.ModifyVariationWeightResponse;
 import com.aovsa.abtestingservice.services.ExperimentService;
@@ -28,11 +29,11 @@ public class ExperimentController {
         this.experimentService = experimentService;
     }
     @GetMapping("/")
-    public ResponseEntity<List<ExperimentDTO>> getAllExperiments() {
+    public ResponseEntity<GetExperimentResponse> getAllExperiments() {
         return experimentService.getAllExperiments();
     }
     @GetMapping("/{id}")
-    public ResponseEntity<ExperimentDTO> getExperimentById(@PathVariable String id) {
+    public ResponseEntity<GetExperimentResponse> getExperimentById(@PathVariable String id) {
         return experimentService.getExperimentById(id);
     }
     @PostMapping("/")

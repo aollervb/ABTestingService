@@ -4,8 +4,11 @@ import com.aovsa.abtestingservice.dtos.ExperimentDTO;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
+import java.util.List;
+
+
 @Data
 @EqualsAndHashCode(callSuper = true)
-public class ModifyVariationWeightResponse extends BaseResponse {
-    private ExperimentDTO experimentDTO;
+public class GetExperimentResponse extends BaseResponse{
+    public List<ExperimentDTO> experiments;
 }
