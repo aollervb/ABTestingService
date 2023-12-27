@@ -7,6 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.util.StringUtils;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.ProfileCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.enhanced.dynamodb.DynamoDbEnhancedClient;
 import software.amazon.awssdk.regions.Region;
@@ -29,10 +30,8 @@ public class DynamoDBConfig {
     @Bean
     public DynamoDbClient getDynamoDbClient() {
         return DynamoDbClient.builder()
-                .endpointOverride(URI.create(amazonDynamoDBEndpoint))
-                .region(Region.AP_SOUTH_1)
-                .credentialsProvider(StaticCredentialsProvider.create(
-                        AwsBasicCredentials.create(amazonAWSAccessKey, amazonAWSSecretKey)))
+                .credentialsProvider(ProfileCredentialsProvider.create())
+                .region(Region.US_WEST_2)
                 .build();
     }
 
